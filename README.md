@@ -49,7 +49,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/yourusername/sendbird.git
+   git clone https://github.com/zomeru/sendbird.git
    cd sendbird
    ```
 
