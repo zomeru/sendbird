@@ -1,0 +1,113 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String    @id @default(cuid())
+  sendbirdUserId   String    @unique
+  name             String?   // Required by NextAuth
+  email            String?   @unique // Required by NextAuth
+  emailVerified    DateTime? // Required by NextAuth
+  nickname         String
+  profileImageUrl  String?
+  password         String?   // Hashed password for email/password auth
+  isDeleted        Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  
+  // Relations
+  createdChannels  Channel[] @relation("ChannelCreator")
+  channelMembers   ChannelMember[]
+  accounts         Account[] // Required by NextAuth
+  sessions        Session[] // Required by NextAuth
+  
+  @@map("users")
+}
+
+// NextAuth.js required models
+model Account {
+  id                 String  @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String?  @db.Text
+  access_token       String?  @db.Text
+  expires_at         Int?
+  token_type        String?
+  scope             String?
+  id_token          String?  @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+  @@index([userId])
+}
+
+model Channel {
+  id                    String    @id @default(cuid())
+  sendbirdChannelUrl    String    @unique
+  channelType           String    @default("group") // group, open, direct
+  name                  String?
+  coverUrl              String?   // Channel cover image URL
+  createdBy             String
+  chatmateId            String?   // For 1-1 channels only - the other user's identifier
+  isDeleted             Boolean   @default(false)
+  totalMessageCount     Int       @default(0)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  // Relations
+  creator               User      @relation("ChannelCreator", fields: [createdBy], references: [sendbirdUserId])
+  members               ChannelMember[]
+  
+  @@map("channels")
+}
+
+model ChannelMember {
+  id                String   @id @default(cuid())
+  channelId         String
+  userId            String
+  sendbirdUserId    String
+  joinedAt          DateTime @default(now())
+  isActive          Boolean  @default(true)
+  
+  // Relations
+  channel           Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([channelId, userId])
+  @@map("channel_members")
+}
+
+model UserSession {
+  id                String   @id @default(cuid())
+  sendbirdUserId    String
+  sessionToken      String   @unique
+  accessToken       String?
+  isActive          Boolean  @default(true)
+  expiresAt         DateTime
+  createdAt         DateTime @default(now())
+  
+  @@map("user_sessions")
+}
