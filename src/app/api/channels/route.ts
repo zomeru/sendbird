@@ -300,6 +300,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const validatedData = UpdateChannelSchema.parse(updateData);
+    const { totalMessageCount, ...restValidatedData } = validatedData;
 
     // Check if channel exists
     const existingChannel = await db.channel.findUnique({
@@ -316,7 +317,14 @@ export async function PUT(request: NextRequest) {
     const updatedChannel = await db.channel.update({
       where: { sendbirdChannelUrl },
       data: {
-        ...validatedData,
+        ...restValidatedData,
+        ...(totalMessageCount
+          ? {
+              totalMessageCount: {
+                increment: 1,
+              },
+            }
+          : {}),
         updatedAt: new Date(),
       },
       include: {

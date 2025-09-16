@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { nanoid } from "nanoid";
 import { db } from "@/lib/db";
+import { generateUserInfo } from "@/lib/utils";
+import { SendbirdService } from "@/lib/sendbird";
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, password, name, nickname } = await request.json();
+    const { email, password } = await request.json();
 
     // Validate required fields
     if (!email || !password) {
@@ -48,18 +49,27 @@ export async function POST(request: NextRequest) {
     const hashedPassword = await bcrypt.hash(password, 12);
 
     // Generate unique Sendbird user ID
-    const sendbirdUserId = `user_${nanoid()}`;
+    const { nickname, userId } = generateUserInfo();
 
-    // Create the user
+    // Create the user (db)
     const newUser = await db.user.create({
       data: {
         email,
         password: hashedPassword,
-        name: name || "",
-        nickname: nickname || name || "User",
-        sendbirdUserId,
+        name: nickname,
+        nickname: nickname,
+        sendbirdUserId: userId,
         profileImageUrl: null,
       },
+    });
+
+    // Create user in Sendbird
+    SendbirdService.createUser(userId, nickname)
+    .catch(() => {
+      return NextResponse.json(
+        { error: "Failed to create user in Sendbird" },
+        { status: 500 }
+      );
     });
 
     // Return success response (don't include password)

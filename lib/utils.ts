@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { nanoid } from "nanoid";
 
 /**
  * Merge Tailwind CSS classes with proper deduplication
@@ -9,38 +10,14 @@ export function cn(...inputs: ClassValue[]): string {
 }
 
 /**
- * Format timestamp to readable date string
+ *
+ * @returns Randomly generated user ID and nickname
  */
-export function formatTimestamp(timestamp: number | string | Date): string {
-  const date = new Date(timestamp);
-  return new Intl.DateTimeFormat("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
-}
+export function generateUserInfo() {
+  const userId = `user_${nanoid()}`;
+  const nickname = `User_${nanoid(10)}`;
 
-/**
- * Generate a random avatar color based on user ID
- */
-export function getAvatarColor(userId: string): string {
-  const colors = [
-    "bg-red-500",
-    "bg-blue-500",
-    "bg-green-500",
-    "bg-yellow-500",
-    "bg-purple-500",
-    "bg-pink-500",
-    "bg-indigo-500",
-    "bg-teal-500",
-  ];
-
-  const hash = userId
-    .split("")
-    .reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  return colors[hash % colors.length];
+  return { userId, nickname };
 }
 
 /**
@@ -137,31 +114,6 @@ export function debounce<T extends (...args: any[]) => any>(
     timeout = setTimeout(() => func(...args), wait);
   };
 }
-
-/**
- * Storage utilities for user session
- */
-export const storage = {
-  setItem: (key: string, value: any): void => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem(key, JSON.stringify(value));
-    }
-  },
-
-  getItem: (key: string): any => {
-    if (typeof window !== "undefined") {
-      const item = localStorage.getItem(key);
-      return item ? JSON.parse(item) : null;
-    }
-    return null;
-  },
-
-  removeItem: (key: string): void => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem(key);
-    }
-  },
-};
 
 /**
  * API response helper

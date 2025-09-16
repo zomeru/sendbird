@@ -18,10 +18,15 @@ export default function MessagingApp() {
   const [isChannelSettingsOpen, setIsChannelSettingsOpen] = useState(false);
   const [currentChannel, setCurrentChannel] = useState<any>(null);
   const { stores } = useSendbirdStateContext();
+  const [doUpdateMessageCount, setDoUpdateMessageCount] = useState(0);
+  const [lastResizeTime, setLastResizeTime] = useState(0);
+  const [isNavigatingBack, setIsNavigatingBack] = useState(false);
 
   useEffect(() => {
     // Handle responsive layout
     const handleResize = () => {
+      const now = Date.now();
+      setLastResizeTime(now);
       setIsMobile(window.innerWidth < 768);
     };
 
@@ -30,104 +35,38 @@ export default function MessagingApp() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // Add SDK event listeners for channel events
-  useEffect(() => {
-    if (stores?.sdkStore?.sdk) {
-      const sdk = stores.sdkStore.sdk;
-
-      const channelHandler = {
-        onUserLeft: (channel: any, user: any) => {
-          // If the current user left the currently selected channel
-          if (
-            channel?.url === selectedChannelUrl &&
-            user?.userId === sdk.currentUser?.userId
-          ) {
-            handleChannelLeft();
-          }
-        },
-        onChannelDeleted: (channelUrl: string) => {
-          // If the currently selected channel was deleted
-          if (channelUrl === selectedChannelUrl) {
-            handleChannelLeft();
-          }
-        },
-        onUserBanned: (channel: any, user: any) => {
-          if (
-            channel?.url === selectedChannelUrl &&
-            user?.userId === sdk.currentUser?.userId
-          ) {
-            handleChannelLeft();
-          }
-        },
-      };
-
-      try {
-        // Try multiple SDK methods for adding channel handlers
-        let handlerAdded = false;
-
-        if (typeof sdk.addChannelHandler === "function") {
-          sdk.addChannelHandler("messaging-app-handler", channelHandler);
-          handlerAdded = true;
-        } else if (
-          sdk.groupChannel &&
-          typeof sdk.groupChannel.addChannelHandler === "function"
-        ) {
-          sdk.groupChannel.addChannelHandler(
-            "messaging-app-handler",
-            channelHandler
-          );
-          handlerAdded = true;
-        } else if (typeof sdk.addGroupChannelHandler === "function") {
-          sdk.addGroupChannelHandler("messaging-app-handler", channelHandler);
-          handlerAdded = true;
-        }
-
-        return () => {
-          // Clean up the handler
-          try {
-            if (typeof sdk.removeChannelHandler === "function") {
-              sdk.removeChannelHandler("messaging-app-handler");
-            } else if (
-              sdk.groupChannel &&
-              typeof sdk.groupChannel.removeChannelHandler === "function"
-            ) {
-              sdk.groupChannel.removeChannelHandler("messaging-app-handler");
-            } else if (typeof sdk.removeGroupChannelHandler === "function") {
-              sdk.removeGroupChannelHandler("messaging-app-handler");
-            }
-          } catch (error) {
-            console.error("Error removing channel handler:", error);
-          }
-        };
-      } catch (error) {
-        console.error("Error adding channel handler:", error);
+  // Centralized function to update message count in database
+  const updateMessageCountInDB = async (channelUrl: string) => {
+    try {
+      if (!stores?.sdkStore?.sdk) {
+        console.error("SDK not available for message count update");
+        return;
       }
-    }
-  }, [stores?.sdkStore?.sdk, selectedChannelUrl]);
 
-  // Monitor selected channel and detect if it becomes invalid/deleted
+      const response = await fetch(`/api/channels`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sendbirdChannelUrl: channelUrl,
+          totalMessageCount: 1,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+    } catch (error) {
+      console.error("Error updating message count in database:", error);
+    }
+  };
+
   useEffect(() => {
-    if (selectedChannelUrl && stores?.sdkStore?.sdk) {
-      const checkChannelExists = async () => {
-        try {
-          await stores.sdkStore.sdk.groupChannel.getChannel(selectedChannelUrl);
-        } catch (error) {
-          console.error("Channel no longer exists:", selectedChannelUrl, error);
-          handleChannelLeft();
-        }
-      };
-
-      // Check immediately
-      checkChannelExists();
-
-      // Set up more frequent check every 1 second for faster detection
-      const intervalId = setInterval(checkChannelExists, 1000);
-
-      return () => {
-        clearInterval(intervalId);
-      };
+    if (doUpdateMessageCount > 0 && selectedChannelUrl) {
+      updateMessageCountInDB(selectedChannelUrl);
     }
-  }, [selectedChannelUrl, stores?.sdkStore?.sdk]);
+  }, [doUpdateMessageCount]);
 
   // Load current channel data when selected channel changes
   useEffect(() => {
@@ -148,78 +87,6 @@ export default function MessagingApp() {
       setCurrentChannel(null);
     }
   }, [selectedChannelUrl, stores?.sdkStore?.sdk]);
-
-  // Add click listener to channel header info button
-  useEffect(() => {
-    if (selectedChannelUrl) {
-      const addChannelHeaderClickListener = () => {
-        setTimeout(() => {
-          // Only target the specific channel info button - be very specific
-          const infoButtons = document.querySelectorAll(
-            ".sendbird-chat-header__right__info"
-          );
-
-          infoButtons.forEach((button, index) => {
-            // Skip if already has our listener
-            if (button.hasAttribute("data-channel-settings-listener")) {
-              return;
-            }
-
-            // Add our custom listener only to info buttons
-            button.addEventListener("click", handleChannelHeaderClick);
-            button.setAttribute("data-channel-settings-listener", "true");
-          });
-        }, 1000);
-      };
-
-      const handleChannelHeaderClick = (e: Event) => {
-        const target = e.target as HTMLElement;
-        const currentTarget = e.currentTarget as HTMLElement;
-
-        // Only proceed if we're clicking on the actual channel info button
-        // Check if the clicked element or its parent has the info button class
-        const isInfoButton =
-          target.closest(".sendbird-chat-header__right__info") ||
-          currentTarget.classList.contains("sendbird-chat-header__right__info");
-
-        // Skip if this is not the info button (could be create channel, attachment, etc.)
-        if (!isInfoButton) {
-          return;
-        }
-
-        // Skip if we're in a modal (create channel modal, etc.)
-        const isInModal =
-          target.closest('[role="dialog"]') ||
-          target.closest(".sendbird-modal") ||
-          target.closest('[class*="modal"]');
-
-        if (isInModal) {
-          return;
-        }
-
-        e.preventDefault();
-        e.stopPropagation();
-        setIsChannelSettingsOpen(true);
-      };
-
-      addChannelHeaderClickListener();
-
-      // Re-add listeners periodically
-      const interval = setInterval(addChannelHeaderClickListener, 2000);
-
-      return () => {
-        clearInterval(interval);
-        // Clean up listeners
-        const headerButtons = document.querySelectorAll(
-          '[data-channel-settings-listener="true"]'
-        );
-        headerButtons.forEach((button) => {
-          button.removeEventListener("click", handleChannelHeaderClick);
-          button.removeAttribute("data-channel-settings-listener");
-        });
-      };
-    }
-  }, [selectedChannelUrl]);
 
   const handleChannelUpdate = async (name: string, coverUrl: string) => {
     if (!currentChannel || !stores?.sdkStore?.sdk) {
@@ -267,12 +134,53 @@ export default function MessagingApp() {
   // Note: Event tracking is handled by the Sendbird UIKit internally
   // and through our API endpoints when channels are created/updated
 
-  const handleChannelSelect = (channelUrl: string) => {
-    setSelectedChannelUrl(channelUrl);
+  const handleChannelSelect = (channelUrl: string, isUserInitiated = false) => {
+    // For user clicks, force the selection and clear navigation state
+    if (isUserInitiated) {
+      // Update state in correct order
+      const updates = async () => {
+        // First set the channel
+        setSelectedChannelUrl(channelUrl);
+        // Then clear navigation state after a very short delay
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        setIsNavigatingBack(false);
+      };
+      updates();
+      return;
+    }
+
+    // For automatic selections, maintain previous behavior
+    if (isNavigatingBack) {
+      return;
+    }
+
+    // Check for recent viewport changes
+    const timeSinceResize = Date.now() - lastResizeTime;
+    if (timeSinceResize < 200) {
+      return;
+    }
+
+    // Allow the automatic selection
+    if (channelUrl !== selectedChannelUrl) {
+      setSelectedChannelUrl(channelUrl);
+    }
   };
 
   const handleBackToChannelList = () => {
+    setIsNavigatingBack(true);
     setSelectedChannelUrl("");
+
+    // Clear the navigation flag after a short delay to allow the transition
+    setTimeout(() => {
+      setIsNavigatingBack(false);
+    }, 500);
+  };
+
+  const handleUserChannelSelect = (
+    channelUrl: string,
+    isUserInitiated = false
+  ) => {
+    handleChannelSelect(channelUrl, isUserInitiated);
   };
 
   const handleChannelLeft = async () => {
@@ -341,7 +249,11 @@ export default function MessagingApp() {
                 <h1 className="text-lg font-semibold">Channels</h1>
               </div>
               <div className="h-[calc(100vh-57px)]">
-                <CustomChannelList onChannelSelect={handleChannelSelect} />
+                <CustomChannelList
+                  onChannelSelect={handleUserChannelSelect}
+                  selectedChannelUrl={selectedChannelUrl}
+                  isNavigatingBack={isNavigatingBack}
+                />
               </div>
             </div>
           </div>
@@ -375,7 +287,16 @@ export default function MessagingApp() {
                   </h1>
                 </div>
                 <div className="h-[calc(100vh-57px)]">
-                  <SBGroupChannel channelUrl={selectedChannelUrl} />
+                  <SBGroupChannel
+                    channelUrl={selectedChannelUrl}
+                    onBeforeSendUserMessage={async (message) => {
+                      setDoUpdateMessageCount((prev) => prev + 1);
+                      return message;
+                    }}
+                    onChatHeaderActionClick={() => {
+                      setIsChannelSettingsOpen(true);
+                    }}
+                  />
                 </div>
               </div>
             ) : null}
@@ -403,7 +324,10 @@ export default function MessagingApp() {
     <div className="h-screen bg-gray-50 flex">
       {/* Channel List Sidebar */}
       <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
-        <CustomChannelList onChannelSelect={handleChannelSelect} />
+        <CustomChannelList
+          onChannelSelect={handleUserChannelSelect}
+          selectedChannelUrl={selectedChannelUrl}
+        />
       </div>
 
       {/* Divider */}
@@ -412,7 +336,16 @@ export default function MessagingApp() {
       {/* Main Channel Area */}
       <div className="flex-1 flex flex-col bg-white">
         {selectedChannelUrl ? (
-          <SBGroupChannel channelUrl={selectedChannelUrl} />
+          <SBGroupChannel
+            channelUrl={selectedChannelUrl}
+            onChatHeaderActionClick={() => {
+              setIsChannelSettingsOpen(true);
+            }}
+            onBeforeSendUserMessage={async (message) => {
+              setDoUpdateMessageCount((prev) => prev + 1);
+              return message;
+            }}
+          />
         ) : (
           <div className="flex-1 flex items-center justify-center bg-white">
             <div className="text-center max-w-md px-6">

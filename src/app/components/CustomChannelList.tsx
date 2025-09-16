@@ -10,7 +10,9 @@ import { LogOut } from "lucide-react";
 import toast from "react-hot-toast";
 
 interface CustomChannelListProps {
-  onChannelSelect?: (channelUrl: string) => void;
+  onChannelSelect?: (channelUrl: string, isUserInitiated?: boolean) => void;
+  selectedChannelUrl?: string;
+  isNavigatingBack?: boolean;
 }
 
 /**
@@ -19,6 +21,8 @@ interface CustomChannelListProps {
  */
 export default function CustomChannelList({
   onChannelSelect,
+  selectedChannelUrl,
+  isNavigatingBack = false,
 }: CustomChannelListProps) {
   const [isCreateChannelOpen, setIsCreateChannelOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -33,13 +37,8 @@ export default function CustomChannelList({
 
   useEffect(() => {
     if (currentUser && currentUser.userId) {
-      const fallbackNickname =
-        currentUser.userId.length >= 8
-          ? `User_${currentUser.userId.slice(-8)}`
-          : `User_${currentUser.userId}`;
-
       setUserProfile({
-        nickname: currentUser.nickname || fallbackNickname,
+        nickname: currentUser.nickname || "",
         profileUrl: currentUser.profileUrl || "",
         userId: currentUser.userId,
       });
@@ -116,49 +115,90 @@ export default function CustomChannelList({
     }
   };
 
+  // Get channel type (direct, group, or open)
+  const getChannelType = (
+    channel: any,
+    memberCount: number
+  ): "direct" | "group" | "open" => {
+    if (channel.isGroupChannel() && memberCount === 2) return "direct";
+    if (channel.isGroupChannel()) return "group";
+    return "open";
+  };
+
+  // Get appropriate channel name based on type and members
+  const getChannelName = (channel: any, isDirectMessage: boolean): string => {
+    // If channel already has a name, use it
+    if (channel.name) return channel.name;
+
+    // For direct messages, try to use the other user's name
+    if (isDirectMessage) {
+      const otherUser = channel.members?.find(
+        (member: any) => member.userId !== currentUser?.userId
+      );
+      return otherUser?.nickname || "Direct Message";
+    }
+
+    // Default name for group channels
+    return "New Group Channel";
+  };
+
+  // Save channel to database
+  const saveChannelToDatabase = async (channelData: any) => {
+    const response = await fetch("/api/channels", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(channelData),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(JSON.stringify(errorData));
+    }
+
+    return response.json();
+  };
+
+  // Refresh channel list
+  const refreshChannelList = async () => {
+    if (!stores?.sdkStore?.sdk) return;
+
+    try {
+      const channelListQuery =
+        stores.sdkStore.sdk.groupChannel.createMyGroupChannelListQuery();
+      await channelListQuery.next();
+    } catch (error) {
+      console.error("Error refreshing channel list:", error);
+    }
+  };
+
   const handleChannelCreated = async (channel: any) => {
     try {
-      // Save channel to database when created
+      // Extract basic channel information
+      const members =
+        channel.members?.map((member: any) => member.userId) || [];
+      const isDirectMessage = channel.isGroupChannel() && members.length === 2;
+
+      // Prepare channel data
       const channelData = {
         sendbirdChannelUrl: channel.url,
-        channelType: channel.isGroupChannel() ? "group" : "open",
-        name: channel.name || "",
+        channelType: getChannelType(channel, members.length),
+        name: getChannelName(channel, isDirectMessage),
         createdBy: currentUser?.userId || "",
-        members: channel.members?.map((member: any) => member.userId) || [],
+        members,
+        chatmateId: isDirectMessage
+          ? members.find((id: string) => id !== currentUser?.userId) || "" // Default to empty string if no chatmate found
+          : "", // Empty string for non-direct messages
         totalMessageCount: channel.messageCount || 0,
       };
 
-      const response = await fetch("/api/channels", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(channelData),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error("Failed to save channel to database:", errorData);
-      } else {
-        await response.json();
-      }
-
-      // Trigger a refresh of the channel list to show the new channel
-      if (stores?.sdkStore?.sdk) {
-        try {
-          // Force refresh the channel list
-          const channelListQuery =
-            stores.sdkStore.sdk.groupChannel.createMyGroupChannelListQuery();
-          await channelListQuery.next();
-        } catch (refreshError) {
-          console.error("Error refreshing channel list:", refreshError);
-        }
-      }
+      // Save and refresh
+      await saveChannelToDatabase(channelData);
+      await refreshChannelList();
 
       // Auto-select the newly created channel
       if (onChannelSelect && channel?.url) {
         setTimeout(() => {
-          onChannelSelect(channel.url);
+          onChannelSelect(channel.url, true); // Channel creation is always user-initiated
         }, 500); // Small delay to ensure the channel appears in the list first
       }
     } catch (error) {
@@ -178,13 +218,13 @@ export default function CustomChannelList({
 
       // Dismiss loading toast and show success
       toast.dismiss(loadingToast);
-      toast.success("Successfully signed out!");
 
       // Sign out from NextAuth
       await signOut({
         callbackUrl: "/auth/signin",
         redirect: true,
       });
+      toast.success("Successfully signed out!");
     } catch (error) {
       console.error("Error during logout:", error);
       toast.error("Error during logout, but signing out anyway...");
@@ -203,9 +243,33 @@ export default function CustomChannelList({
         {/* Channel List */}
         <div className="flex-1">
           <SBGroupChannelList
-            onChannelSelect={(channel: any) => {
-              if (onChannelSelect && channel?.url) {
-                onChannelSelect(channel.url);
+            onChannelSelect={(channel) => {
+              // Get the click event that triggered this selection
+              const clickEvent = window.event as MouseEvent | undefined;
+
+              // Safely check if target is an HTMLElement
+              const target = clickEvent?.target;
+              const isHtmlElement = target instanceof HTMLElement;
+
+              // Check if it's a real user click on a channel item
+              const isUserClick =
+                clickEvent?.isTrusted &&
+                isHtmlElement &&
+                ((target as HTMLElement).closest(
+                  ".sendbird-channel-preview"
+                ) !== null ||
+                  (target as HTMLElement).closest(
+                    '[class*="ChannelPreview"]'
+                  ) !== null);
+
+              if (channel?.url && channel.url !== selectedChannelUrl) {
+                if (isUserClick) {
+                  onChannelSelect?.(channel.url, true);
+                } else if (!isNavigatingBack) {
+                  onChannelSelect?.(channel.url, false);
+                } else {
+                  console.log("Preventing selection during back navigation");
+                }
               }
             }}
             onChannelCreated={handleChannelCreated}
@@ -214,6 +278,7 @@ export default function CustomChannelList({
               limit: 50, // Limit number of channels loaded
             }}
             className="h-full"
+            selectedChannelUrl={selectedChannelUrl}
           />
         </div>
 
@@ -244,7 +309,7 @@ export default function CustomChannelList({
       {/* Create Channel Modal */}
       {isCreateChannelOpen && (
         <CreateChannel
-          onChannelCreated={(channel: any) => {
+          onChannelCreated={(channel) => {
             handleChannelCreated(channel);
             setIsCreateChannelOpen(false);
             if (onChannelSelect && channel?.url) {

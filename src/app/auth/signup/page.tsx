@@ -73,16 +73,16 @@ export default function SignUpPage() {
       if (signInResult?.error) {
         const errorMessage =
           "Account created but sign in failed. Please try signing in manually.";
-        toast.error(errorMessage);
         setError(errorMessage);
       } else {
-        toast.success("Welcome! You're now signed in.");
+        toast.success("Navigating to home page...", {
+          duration: 3000,
+        });
         router.push("/");
       }
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Something went wrong";
-      toast.error(errorMessage);
       setError(errorMessage);
     } finally {
       setLoading(false);

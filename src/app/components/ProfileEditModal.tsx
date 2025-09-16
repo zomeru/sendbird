@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { X, Camera, User, AlertCircle, Check } from "lucide-react";
+import { X, User, AlertCircle, Check } from "lucide-react";
 import { validateNickname, validateProfileImageUrl, cn } from "@/lib/utils";
 
 interface ProfileEditModalProps {
@@ -115,14 +115,6 @@ export default function ProfileEditModal({
 
       await response.json();
 
-      // Update localStorage
-      localStorage.setItem("sendbird_nickname", nickname.trim());
-      if (profileImageUrl.trim()) {
-        localStorage.setItem("sendbird_profile_url", profileImageUrl.trim());
-      } else {
-        localStorage.removeItem("sendbird_profile_url");
-      }
-
       setSuccessMessage("Profile updated successfully!");
 
       // Call the callback to update parent component
@@ -197,9 +189,6 @@ export default function ProfileEditModal({
                     </span>
                   </div>
                 )}
-              </div>
-              <div className="absolute bottom-0 right-0 bg-blue-600 rounded-full p-2">
-                <Camera className="w-4 h-4 text-white" />
               </div>
             </div>
 

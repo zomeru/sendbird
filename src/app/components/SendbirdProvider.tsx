@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import { SendBirdProvider } from "@sendbird/uikit-react";
 import "@sendbird/uikit-react/dist/index.css";
-import { useSession } from "next-auth/react";
 
 interface SendbirdProviderProps {
   children: React.ReactNode;
@@ -29,8 +29,6 @@ export default function SendbirdProvider({ children }: SendbirdProviderProps) {
       window.location.href = "/auth/signin";
     }
   }, [session, status]);
-
-  // No longer need the createUserInDatabase function as users are created during authentication
 
   if (isLoading || !currentUserId) {
     return (

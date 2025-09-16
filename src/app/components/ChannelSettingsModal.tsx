@@ -9,7 +9,7 @@ interface ChannelSettingsModalProps {
   channelUrl: string;
   currentChannelName: string;
   currentChannelCoverUrl?: string;
-  onChannelUpdate: (name: string, coverUrl: string) => void;
+  onChannelUpdate: (name: string, coverUrl: string) => Promise<void>;
   onChannelLeave: () => void;
 }
 

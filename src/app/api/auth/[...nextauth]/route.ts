@@ -23,7 +23,7 @@ const authOptions: AuthOptions = {
         });
 
         if (!user) {
-          throw new Error("No user found with this email");
+          throw new Error("Invalid email or password.");
         }
 
         const isValid = await bcrypt.compare(
@@ -32,7 +32,7 @@ const authOptions: AuthOptions = {
         );
 
         if (!isValid) {
-          throw new Error("Invalid password");
+          throw new Error("Invalid email or password.");
         }
 
         return {
@@ -40,6 +40,7 @@ const authOptions: AuthOptions = {
           email: user.email,
           name: user.name,
           sendbirdUserId: user.sendbirdUserId,
+          nickname: user.nickname,
         };
       },
     }),
